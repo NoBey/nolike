@@ -74,6 +74,10 @@ function renderComponet(vdom, parent) {
   return instance.__dom;
 }
 
+function flatFragment(children = []){
+  return children.map((vdom) => vdom.type === FRAGMENT_TYPE ? vdom.children : vdom ).flat()
+}
+
 // 更新 dom
 function updateDom(dom, vdom, parent = dom.parentNode) {
   const replace = (elm) =>
@@ -96,13 +100,24 @@ function updateDom(dom, vdom, parent = dom.parentNode) {
     return updateDom(dom, vdom.type(props), parent);
   }
 
+  // Fragment 组件处理
+  if(vdom.type === FRAGMENT_TYPE){
+    let _dom = dom
+    vdom.children && vdom.children.forEach((vdom) => {
+      updateDom(_dom, vdom, parent)
+      _dom = _dom.nextSibling
+    });
+    return parent
+  }
+
   // 普通处理
   if (typeof vdom === "object" && typeof vdom.type === "string") {
     setAttributes(dom, vdom);
     // 节点相同时更新子节点
     if (vdom.type.toLocaleUpperCase() === dom.tagName) {
+      
       const oldList = [...dom.childNodes]; // .map(dom => ({ id: dom.__key })) // 从 dom 获取 key
-      const newList = vdom.children; // .map(({key}) => ({ id: key}))
+      const newList = flatFragment(vdom.children); // 展开 Fragment 
       // 这里还可以优化 diff 效率 目前是直接遍历
       newList.forEach((childVdom, index) => {
         let childDom;

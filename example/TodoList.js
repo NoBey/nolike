@@ -1,4 +1,4 @@
-import { Component, createElement } from '../src/index'
+import { Component, createElement, Fragment } from '../src/index'
 import TodoItem from './TodoItem'
 
 class TodoList extends Component {
@@ -68,7 +68,9 @@ class TodoList extends Component {
           onChange={this.handleInputChange}
         />
         <button onClick={this.handleBtnClick}>add</button>
-        <ul>{this.getTodoItem()}</ul>
+        <>
+        {this.getTodoItem()}
+        </>
       </div>
     )
   }
