@@ -1,3 +1,5 @@
+const FRAGMENT_TYPE = Symbol.for("fragment");
+
 function createElement(type, props, ...children) {
   return {
     type,
@@ -20,12 +22,11 @@ function setAttributes(dom, vdom) {
     } else if (key === "key") {
       dom.__key = value;
     } else {
-      if(dom.setAttributes){
+      if (dom.setAttributes) {
         dom.setAttributes(key, value);
-      }else{
-        dom[key] = value
+      } else {
+        dom[key] = value;
       }
-      
     }
   });
 }
@@ -37,21 +38,32 @@ function renderDom(vdom, parent) {
     typeof vdom !== "object" &&
     (typeof vdom === "string" || typeof vdom === "number")
   ) {
+    // 文本数字处理
     return mount(document.createTextNode(vdom));
-  }
-  if (typeof vdom.type === "string") {
+  } else if (typeof vdom.type === "string") {
+    // 普通处理
     const dom = document.createElement(vdom.type);
     setAttributes(dom, vdom);
     vdom.children && vdom.children.forEach((vdom) => renderDom(vdom, dom));
     return mount(dom);
   } else if (Component.isPrototypeOf(vdom.type)) {
+    // Component 组件处理
     return mount(renderComponet(vdom, parent));
+  } else if (typeof vdom.type === "function") {
+    // Function 组件处理
+    const props = { ...vdom.props, children: vdom.children };
+    return renderDom(vdom.type(props), parent);
   }
+  if(vdom.type === FRAGMENT_TYPE){
+    // Fragment 组件处理
+    vdom.children && vdom.children.forEach((vdom) => renderDom(vdom, parent));
+    return parent
+  }
+
 }
 
 //  渲染新 dom 时辅助解析 组件
 function renderComponet(vdom, parent) {
-  console.log("renderComponet", vdom);
   const props = { ...vdom.props, children: vdom.children };
   const instance = new vdom.type(props);
   instance.willMount(props);
@@ -73,13 +85,20 @@ function updateDom(dom, vdom, parent = dom.parentNode) {
     return replace(document.createTextNode(vdom));
   }
 
-  // 自定义组件
+  // Component 组件处理
   if (typeof vdom === "object" && Component.isPrototypeOf(vdom.type)) {
     return replace(updateComponet(dom, vdom, parent));
   }
 
+  // Function 组件处理
+  if (typeof vdom.type === "function") {
+    const props = { ...vdom.props, children: vdom.children };
+    return updateDom(dom, vdom.type(props), parent);
+  }
+
+  // 普通处理
   if (typeof vdom === "object" && typeof vdom.type === "string") {
-    setAttributes(dom, vdom)
+    setAttributes(dom, vdom);
     // 节点相同时更新子节点
     if (vdom.type.toLocaleUpperCase() === dom.tagName) {
       const oldList = [...dom.childNodes]; // .map(dom => ({ id: dom.__key })) // 从 dom 获取 key
@@ -95,11 +114,11 @@ function updateDom(dom, vdom, parent = dom.parentNode) {
         }
         updateDom(childDom, childVdom, dom);
       });
-      if(oldList.length > newList.length){
-          for(let i = newList.length; i < oldList.length; i++ ){
-            if(oldList.__instance) oldList.__instance.WillUnmount()
-            oldList[i].remove()
-          }
+      if (oldList.length > newList.length) {
+        for (let i = newList.length; i < oldList.length; i++) {
+          if (oldList.__instance) oldList.__instance.WillUnmount();
+          oldList[i].remove();
+        }
       }
       return dom;
     }
@@ -127,7 +146,6 @@ function updateComponet(dom, vdom, parent = dom.parentNode) {
   return null;
 }
 
-
 class Component {
   constructor(props = {}) {
     this.props = props;
@@ -140,7 +158,12 @@ class Component {
   }
   willMount() {}
   mount() {}
-  WillUnmount(){}
+  WillUnmount() {}
 }
 
-export { createElement, Component, renderDom as render };
+export {
+  createElement,
+  Component,
+  renderDom as render,
+  FRAGMENT_TYPE as Fragment,
+};
