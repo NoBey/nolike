@@ -161,15 +161,30 @@ function updateComponet(dom, vdom, parent = dom.parentNode) {
   return null;
 }
 
+
+
+function enqueueRender(){
+  if(!this.__pendingState.length) return 
+  while(this.__pendingState.length){
+    this.state = {...this.state, ...this.__pendingState.shift()} 
+  }
+  updateDom(this.__dom, this.render());
+}
+
+
+function enqueueState(state){
+  if(!this.__pendingState) this.__pendingState = []
+  this.__pendingState.push(state)
+  queueMicrotask(enqueueRender.bind(this))
+}
+
 class Component {
   constructor(props = {}) {
     this.props = props;
     this.state = {};
   }
-  setState(newState) {
-    const state = { ...this.state, ...newState };
-    this.state = state;
-    updateDom(this.__dom, this.render());
+  setState(state) {
+    enqueueState.call(this, state)
   }
   willMount() {}
   mount() {}

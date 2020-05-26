@@ -4,9 +4,24 @@ import TodoList from './TodoList';
 
 const app = document.createElement('div')
 document.body.appendChild(app)
-const Test = ({ value = 222 }) => {
-return <div>test: {value}</div>
+
+
+class Test extends Component{
+    constructor(){
+        super()
+        this.state = {a: 1}
+    }
+    add(){
+        const {a}= this.state
+        this.setState({ a: a + 2 })
+        this.setState({ a: a + 3 })
+    }
+    render(){
+        console.log('render', this.state.a )
+        return <div> { this.state.a } <button onClick={() => this.add()}>+++++</button> </div>
+    }
 }
+
 
 
 render(
@@ -14,3 +29,8 @@ render(
 <TodoList /> 
 <Test value={322332} />
 </>, app);
+
+
+
+
+
