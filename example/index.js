@@ -1,36 +1,40 @@
+import {
+  render,
+  createElement,
+  Fragment,
+  useState,
+  useEffect,
+} from "../src/index";
 
-import { Component, render, createElement, Fragment } from '../src/index'
-import TodoList from './TodoList';
+const app = document.createElement("div");
+document.body.appendChild(app);
 
-const app = document.createElement('div')
-document.body.appendChild(app)
+function Test() {
+  const [count, setCount] = useState(1);
+  useEffect(() => {
+    //   setTimeout(() => {
+    //     setCount(count + 1)
+    //   }, 1000)
+  }, [count]);
+  return (
+    <>
+      <h1> number: {count} </h1>
+      <div onClick={() => (count > 10 ? setCount(1) : setCount(count + 1))}>
+        +
+      </div>
 
-
-class Test extends Component{
-    constructor(){
-        super()
-        this.state = {a: 1}
-    }
-    add(){
-        const {a}= this.state
-        this.setState({ a: a + 2 })
-        this.setState({ a: a + 3 })
-    }
-    render(){
-        console.log('render', this.state.a )
-        return <div> { this.state.a } <button onClick={() => this.add()}>+++++</button> </div>
-    }
+      {[...Array(count).keys()].map((i) => (
+        <div>{i}</div>
+      ))}
+    </>
+  );
 }
 
-
-
 render(
-<>
-<TodoList /> 
-<Test value={322332} />
-</>, app);
-
-
-
-
-
+  <div>
+    test
+    <Test />
+    <Test />
+  </div>,
+  app
+);

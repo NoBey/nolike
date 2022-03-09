@@ -1,5 +1,20 @@
 const FRAGMENT_TYPE = Symbol.for("fragment");
 
+// workInProgressHook
+// https://github1s.com/facebook/react/blob/HEAD/packages/react-reconciler/src/ReactFiberHooks.new.js#L188
+
+let workInProgressVdom;
+let workInProgressHooks;
+let workInProgressHookIndex;
+
+function mapProps(vdom) {
+  return Object.entries(vdom).reduce(
+    (props, [k, v]) =>
+      ["type", "children"].includes(k) ? props : { ...props, [k]: v },
+    {}
+  );
+}
+
 function createElement(type, props, ...children) {
   return {
     type,
@@ -31,169 +46,181 @@ function setAttributes(dom, vdom) {
   });
 }
 
-// 渲染新 dom
-function renderDom(vdom, parent) {
-  const mount = parent ? (dom) => parent.appendChild(dom) : (dom) => dom;
-  if (
-    typeof vdom !== "object" &&
-    (typeof vdom === "string" || typeof vdom === "number")
-  ) {
-    // 文本数字处理
-    return mount(document.createTextNode(vdom));
-  } else if (typeof vdom.type === "string") {
-    // 普通处理
-    const dom = document.createElement(vdom.type);
-    setAttributes(dom, vdom);
-    vdom.children && vdom.children.forEach((vdom) => renderDom(vdom, dom));
-    return mount(dom);
-  } else if (Component.isPrototypeOf(vdom.type)) {
-    // Component 组件处理
-    return mount(renderComponet(vdom, parent));
-  } else if (typeof vdom.type === "function") {
-    // Function 组件处理
-    const props = { ...vdom.props, children: vdom.children };
-    return renderDom(vdom.type(props), parent);
+function WorkInProgressHook(initialState) {
+  if (!workInProgressHooks[workInProgressHookIndex])
+    workInProgressHooks.push({ state: initialState, vdom: workInProgressVdom });
+  return workInProgressHooks[workInProgressHookIndex++];
+}
+
+function updateWorkInProgressHook(hook, state) {
+  hook.state = state;
+  return updateFunctionDom(hook.vdom);
+}
+
+function useState(initialState) {
+  const hook = WorkInProgressHook(initialState);
+  return [hook.state, (state) => updateWorkInProgressHook(hook, state)];
+}
+
+
+function someDep(dep, _dep){
+  if(!dep || !_dep) return false
+  if(dep.length !== _dep.length) return false
+  return dep.every((d, i) => d === _dep[i] )
+}
+
+function useEffect(cb, dep){
+  const hook = WorkInProgressHook();
+  if(dep && hook.dep && someDep(hook.dep, dep)) return
+  if(hook.effect) hook.endeffect()
+  hook.dep = dep
+  queueMicrotask(() => {
+    hook.endeffect = cb()
+  })
+}
+
+function updateFunctionDom(vdom) {
+  workInProgressVdom = vdom;
+  workInProgressHooks = vdom.hooks;
+  workInProgressHookIndex = 0;
+  const __return = FixString(vdom.type(vdom));
+  updateDom(vdom.__return, __return);
+}
+
+// function updateText(){
+
+// }
+
+function findEndDom(vdom) {
+  if (vdom.__dom || vdom.textnode) return vdom.__dom || vdom.textnode;
+  if (vdom.__return) return findEndDom(__return);
+  return findEndDom(vdom.children[vdom.children.length - 1]);
+}
+
+function unmountDom(vdom) {
+  if (vdom.__dom || vdom.textnode) {
+    (vdom.__dom || vdom.textnode).remove();
   }
-  if(vdom.type === FRAGMENT_TYPE){
-    // Fragment 组件处理
-    vdom.children && vdom.children.forEach((vdom) => renderDom(vdom, parent));
-    return parent
-  }
-
 }
 
-//  渲染新 dom 时辅助解析 组件
-function renderComponet(vdom, parent) {
-  const props = { ...vdom.props, children: vdom.children };
-  const instance = new vdom.type(props);
-  instance.willMount(props);
-  instance.__dom = renderDom(instance.render(), parent);
-  instance.__dom.__key = props.key;
-  instance.__dom.__instance = instance;
-  instance.mount(props);
-  return instance.__dom;
-}
-
-function flatFragment(children = []){
-  return children.map((vdom) => vdom.type === FRAGMENT_TYPE ? vdom.children : vdom ).flat()
-}
-
-// 更新 dom
-function updateDom(dom, vdom, parent = dom.parentNode) {
+function updateDom(vdom, newvdom) {
+  // const
   const replace = (elm) =>
-    parent ? parent.replaceChild(elm, dom) && elm : dom.replaceWith(elm) || elm;
-
+    vdom.textnode
+      ? vdom.textnode.replaceWith(elm)
+      : vdom.__dom.replaceWith(elm) || elm;
   // 文本类型
-  if (typeof vdom === "string" && dom instanceof Text) {
-    if (dom.textContent === vdom) return dom;
-    return replace(document.createTextNode(vdom));
-  }
+  if (typeof newvdom === "string" || vdom instanceof String) {
+    if (String(newvdom) == String(vdom)) return;
 
-  // Component 组件处理
-  if (typeof vdom === "object" && Component.isPrototypeOf(vdom.type)) {
-    return replace(updateComponet(dom, vdom, parent));
+    const textnode = document.createTextNode(String(newvdom));
+    replace(textnode);
+    vdom.textnode = textnode;
+    return textnode;
   }
-
   // Function 组件处理
-  if (typeof vdom.type === "function") {
-    const props = { ...vdom.props, children: vdom.children };
-    return updateDom(dom, vdom.type(props), parent);
+  if (typeof newvdom.type === "function" && vdom.type === newvdom.type) {
+    Object.assign(vdom, mapProps(newvdom));
+    updateFunctionDom(vdom);
+    return;
   }
-
-  // Fragment 组件处理
-  if(vdom.type === FRAGMENT_TYPE){
-    let _dom = dom
-    vdom.children && vdom.children.forEach((vdom) => {
-      updateDom(_dom, vdom, parent)
-      _dom = _dom.nextSibling
-    });
-    return parent
-  }
-
-  // 普通处理
-  if (typeof vdom === "object" && typeof vdom.type === "string") {
-    setAttributes(dom, vdom);
-    // 节点相同时更新子节点
-    if (vdom.type.toLocaleUpperCase() === dom.tagName) {
-      
-      const oldList = [...dom.childNodes]; // .map(dom => ({ id: dom.__key })) // 从 dom 获取 key
-      const newList = flatFragment(vdom.children); // 展开 Fragment 
-      // 这里还可以优化 diff 效率 目前是直接遍历
-      newList.forEach((childVdom, index) => {
-        let childDom;
-        if (oldList[index]) {
-          childDom = oldList[index];
-        } else {
-          childDom = renderDom(childVdom);
-          dom.appendChild(childDom);
-        }
-        updateDom(childDom, childVdom, dom);
-      });
-      if (oldList.length > newList.length) {
-        for (let i = newList.length; i < oldList.length; i++) {
-          if (oldList.__instance) oldList.__instance.WillUnmount();
-          oldList[i].remove();
-        }
+  // 普通处理 vdom.type 可是是 string 或者 FRAGMENT_TYPE
+  if (typeof vdom === "object" && vdom.type === newvdom.type) {
+    if (typeof vdom.type === "string") setAttributes(vdom.__dom, newvdom);
+    Object.assign(vdom, mapProps(newvdom));
+    vdom.children = vdom.children.map(FixString);
+    newvdom.children = newvdom.children.map(FixString);
+    const oldList = vdom.children; // .map(dom => ({ id: dom.__key })) // 从 dom 获取 key
+    const newList = newvdom.children; // 展开 Fragment
+    //   // 这里还可以优化 diff 效率 目前是直接遍历
+    let endDom;
+    newList.forEach((childVdom, index) => {
+      if (oldList[index]) {
+        updateDom(oldList[index], childVdom);
+      } else {
+        if (!endDom) endDom = findEndDom(oldList[oldList.length - 1]);
+        const dom = renderDom(childVdom);
+        endDom.after(dom);
+        endDom = dom;
+        oldList.push(childVdom);
+        // childDom = renderDom(childVdom);
+        // dom.appendChild(childDom);
       }
-      return dom;
-    }
-  }
+    });
 
+    while (oldList.length > newList.length) {
+      vdom = oldList.pop();
+      unmountDom(vdom);
+      // unmount
+    }
+    return;
+
+    //   return dom;
+  }
   // 其余情况
   const newDom = renderDom(vdom);
   return replace(newDom);
 }
 
-// 更新 dom 辅助更新 组件
-function updateComponet(dom, vdom, parent = dom.parentNode) {
-  //    const replace = parent ? parent.replaceChild(,)
-  const props = { ...vdom.props, children: vdom.children };
-  if (dom.__instance && dom.__instance.constructor === vdom.type) {
-    dom.__instance.props = props;
-    const newDom = updateDom(dom, dom.__instance.render(), parent);
-    dom.__instance.__dom = newDom;
-    newDom.__instance = dom.__instance;
-    return newDom;
-  } else if (Component.isPrototypeOf(vdom.type)) {
-    const newDom = renderComponet(vdom, parent);
-    return newDom;
+// 渲染新 dom
+function renderDom(vdom, parent) {
+  console.log(vdom)
+  const mount = parent ? (dom) => parent.appendChild(dom) : (dom) => dom;
+  if (
+    typeof vdom === "string" ||
+    typeof vdom === "number" ||
+    vdom instanceof String
+  ) {
+    // 文本数字处理
+    const text = document.createTextNode(vdom);
+    vdom.textnode = text;
+    return mount(text);
+  } else if (typeof vdom.type === "string") {
+    // 普通处理
+    const dom = document.createElement(vdom.type);
+    vdom.__dom = dom;
+    setAttributes(dom, vdom);
+    if (vdom.children) {
+      vdom.children = vdom.children.map(FixString);
+      vdom.children.forEach((vdom) => renderDom(vdom, dom));
+    }
+    return mount(dom);
+  } else if (typeof vdom.type === "function") {
+    // Function 组件处理
+    // const props = { ...vdom.props, children: vdom.children };
+    return renderFunctionDom(vdom, parent); // renderDom(vdom.type(props), parent);
   }
-  return null;
+  if (vdom.type === FRAGMENT_TYPE) {
+    // Fragment 组件处理
+    const dom = document.createDocumentFragment();
+    if (vdom.children) {
+      vdom.children = vdom.children.map(FixString);
+      vdom.children.forEach((vdom) => renderDom(vdom, dom));
+    }
+    return mount(dom);
+  }
 }
 
-
-
-function enqueueRender(){
-  if(!this.__pendingState.length) return 
-  while(this.__pendingState.length){
-    this.state = {...this.state, ...this.__pendingState.shift()} 
-  }
-  updateDom(this.__dom, this.render());
+function FixString(vdom) {
+  if (typeof vdom === "string" || typeof vdom === "number")
+    return new String(vdom);
+  return vdom;
 }
 
-
-function enqueueState(state){
-  if(!this.__pendingState) this.__pendingState = []
-  this.__pendingState.push(state)
-  queueMicrotask(enqueueRender.bind(this))
-}
-
-class Component {
-  constructor(props = {}) {
-    this.props = props;
-    this.state = {};
-  }
-  setState(state) {
-    enqueueState.call(this, state)
-  }
-  willMount() {}
-  mount() {}
-  WillUnmount() {}
+function renderFunctionDom(vdom, parent) {
+  vdom.hooks = [];
+  workInProgressVdom = vdom;
+  workInProgressHooks = vdom.hooks;
+  workInProgressHookIndex = 0;
+  vdom.__return = FixString(vdom.type(vdom));
+  console.log(vdom);
+  return renderDom(vdom.__return, parent);
 }
 
 export {
   createElement,
-  Component,
   renderDom as render,
   FRAGMENT_TYPE as Fragment,
+  useState,
+  useEffect
 };
