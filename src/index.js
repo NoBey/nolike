@@ -3,6 +3,9 @@ const FRAGMENT_TYPE = Symbol.for("fragment");
 // workInProgressHook
 // https://github1s.com/facebook/react/blob/HEAD/packages/react-reconciler/src/ReactFiberHooks.new.js#L188
 
+// https://github1s.com/preactjs/preact/blob/HEAD/hooks/src/index.js
+
+
 let workInProgressVdom;
 let workInProgressHooks;
 let workInProgressHookIndex;
@@ -66,18 +69,44 @@ function useState(initialState) {
 function someDep(dep, _dep){
   if(!dep || !_dep) return false
   if(dep.length !== _dep.length) return false
+  if(dep.length === 0) return true
   return dep.every((d, i) => d === _dep[i] )
 }
 
 function useEffect(cb, dep){
   const hook = WorkInProgressHook();
   if(dep && hook.dep && someDep(hook.dep, dep)) return
-  if(hook.effect) hook.endeffect()
+  if(hook.endeffect) hook.endeffect()
   hook.dep = dep
   queueMicrotask(() => {
     hook.endeffect = cb()
   })
 }
+
+function useCallback(cb, dep){
+  const hook = WorkInProgressHook();
+  if(dep && hook.dep && someDep(hook.dep, dep)) return hook.cb
+  hook.dep = dep
+  hook.cb = cb
+  return hook.cb
+}
+
+function useMemo(cb, dep){
+  const hook = WorkInProgressHook();
+  if(dep && hook.dep && someDep(hook.dep, dep)) return hook.memo
+  hook.dep = dep
+  hook.memo = cb()
+  return hook.memo
+}
+//  react imperativeHandleEffect https://github1s.com/facebook/react/blob/HEAD/packages/react-reconciler/src/ReactFiberHooks.new.js#L1773
+//  preact applyRef https://github1s.com/preactjs/preact/blob/HEAD/src/diff/index.js#L464
+
+function useRef(){
+  const hook = WorkInProgressHook();
+  if(!hook.ref) hook.ref = { current : null }
+  return hook.ref
+}
+
 
 function updateFunctionDom(vdom) {
   workInProgressVdom = vdom;
@@ -87,9 +116,7 @@ function updateFunctionDom(vdom) {
   updateDom(vdom.__return, __return);
 }
 
-// function updateText(){
 
-// }
 
 function findEndDom(vdom) {
   if (vdom.__dom || vdom.textnode) return vdom.__dom || vdom.textnode;
@@ -120,14 +147,16 @@ function updateDom(vdom, newvdom) {
   }
   // Function 组件处理
   if (typeof newvdom.type === "function" && vdom.type === newvdom.type) {
-    Object.assign(vdom, mapProps(newvdom));
+    vdom.props = {...vdom.props, ...mapProps(newvdom.props || {})}
     updateFunctionDom(vdom);
     return;
   }
   // 普通处理 vdom.type 可是是 string 或者 FRAGMENT_TYPE
   if (typeof vdom === "object" && vdom.type === newvdom.type) {
-    if (typeof vdom.type === "string") setAttributes(vdom.__dom, newvdom);
-    Object.assign(vdom, mapProps(newvdom));
+    if (typeof vdom.type === "string") {
+      setAttributes(vdom.__dom, newvdom);
+    }
+    vdom.props = {...vdom.props, ...mapProps(newvdom.props || {})}
     vdom.children = vdom.children.map(FixString);
     newvdom.children = newvdom.children.map(FixString);
     const oldList = vdom.children; // .map(dom => ({ id: dom.__key })) // 从 dom 获取 key
@@ -143,8 +172,7 @@ function updateDom(vdom, newvdom) {
         endDom.after(dom);
         endDom = dom;
         oldList.push(childVdom);
-        // childDom = renderDom(childVdom);
-        // dom.appendChild(childDom);
+  
       }
     });
 
@@ -164,7 +192,6 @@ function updateDom(vdom, newvdom) {
 
 // 渲染新 dom
 function renderDom(vdom, parent) {
-  console.log(vdom)
   const mount = parent ? (dom) => parent.appendChild(dom) : (dom) => dom;
   if (
     typeof vdom === "string" ||
@@ -183,6 +210,9 @@ function renderDom(vdom, parent) {
     if (vdom.children) {
       vdom.children = vdom.children.map(FixString);
       vdom.children.forEach((vdom) => renderDom(vdom, dom));
+    }
+    if(vdom.props && typeof vdom.props.ref === 'object') {
+      vdom.props.ref.current = dom
     }
     return mount(dom);
   } else if (typeof vdom.type === "function") {
@@ -213,7 +243,6 @@ function renderFunctionDom(vdom, parent) {
   workInProgressHooks = vdom.hooks;
   workInProgressHookIndex = 0;
   vdom.__return = FixString(vdom.type(vdom));
-  console.log(vdom);
   return renderDom(vdom.__return, parent);
 }
 
@@ -222,5 +251,8 @@ export {
   renderDom as render,
   FRAGMENT_TYPE as Fragment,
   useState,
-  useEffect
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef
 };
